@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Phaser Part 7 – Explosión Real (assets)</title>
+    <script src="//cdn.jsdelivr.net/npm/phaser@3.11.0/dist/phaser.js"></script>
+    <style> body { margin: 0; } </style>
+</head>
+<body>
+
+<script>
+    var config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 600,
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: { y: 300 },
+                debug: false
+            }
+        },
+        scene: { preload: preload, create: create, update: update }
+    };
+
+    var player;
+    var platforms;
+    var bombs;
+    var cursors;
+
+    new Phaser.Game(config);
+
+    function preload() {
+        // NOTA: rutas relativas a la carpeta del proyecto (tal como está en tu estructura)
+        this.load.image('sky', 'assets/sky.png');
+        // El sprite de la plataforma se llama platform.png en tu carpeta, lo cargamos como 'ground'
+        this.load.image('ground', 'assets/platform.png');
+        this.load.image('star', 'assets/star.png');
+
+        // Bomba
+        this.load.image('bomb', 'assets/bomb.png');
+
+        // SPRITESHEET de explosión dentro de assets (48x32 => 3x2 frames de 16x16)
+        this.load.spritesheet('explosion', 'assets/explosion.png', {
+            frameWidth: 16,
+            frameHeight: 16
+        });
+
+        // Spritesheet del jugador
+        this.load.spritesheet('dude', 'assets/dude.png', {
+            frameWidth: 32,
+            frameHeight: 48
+        });
+    }
+
+    function create() {
+        this.add.image(400, 300, 'sky');
+
+        // Plataformas (usa la key 'ground' cargada arriba)
+        platforms = this.physics.add.staticGroup();
+        platforms.create(400, 568, 'ground').setScale(2).refreshBody();
+
+        // Grupo de bombas
+        bombs = this.physics.add.group();
+
+        // Crear bomba periódica
+        this.time.addEvent({ delay: 500, callback: createBomb, loop: true });
+
+        // Jugador
+        player = this.physics.add.sprite(100, 450, 'dude');
+        player.setBounce(0.2);
+        player.setCollideWorldBounds(true);
+
+        // Animaciones del jugador
+        this.anims.create({
+            key: 'left',
+            frames: this.anims.generateFrameNumbers('dude', { start: 0, end: 3 }),
+            frameRate: 10,
+            repeat: -1
+        });
+        this.anims.create({
+            key: 'turn',
+            frames: [{ key: 'dude', frame: 4 }],
+            frameRate: 20
+        });
+        this.anims.create({
+            key: 'right',
+            frames: this.anims.generateFrameNumbers('dude', { start: 5, end: 8 }),
+            frameRate: 10,
+            repeat: -1
+        });
+
+        cursors = this.input.keyboard.createCursorKeys();
+
+        // Colisiones
+        this.physics.add.collider(player, platforms);
+
+        // bomba <-> plataforma -> explodeBomb (explodeBomb decide si explotar)
+        this.physics.add.collider(bombs, platforms, explodeBomb, null, this);
+
+        // bomba <-> jugador -> explodeBomb (explota siempre)
+        this.physics.add.collider(bombs, player, explodeBomb, null, this);
+
+        // Animación de explosión: usa todos los frames del spritesheet (3x2 = 6 frames)
+        this.anims.create({
+            key: 'explode_anim',
+            frames: this.anims.generateFrameNumbers('explosion'),
+            frameRate: 25, // ajusta velocidad si quieres
+            repeat: 0
+        });
+    }
+
+    function update() {
+        if (!cursors) return;
+
+        if (cursors.left.isDown) {
+            player.setVelocityX(-160);
+            player.anims.play('left', true);
+        } else if (cursors.right.isDown) {
+            player.setVelocityX(160);
+            player.anims.play('right', true);
+        } else {
+            player.setVelocityX(0);
+            player.anims.play('turn');
+        }
+
+        if (cursors.up.isDown && player.body.touching.down) {
+            player.setVelocityY(-330);
+        }
+    }
+
+    function createBomb() {
+        let x = Phaser.Math.Between(100, 700);
+        // Crear la bomba y asignarle propiedades físicas
+        let b = bombs.create(x, -20, 'bomb');
+        if (b) {
+            b.setBounce(0.3);
+            b.setCollideWorldBounds(true);
+            b.setData('exploded', false); // bandera para evitar dobles explosiones
+        }
+    }
+
+    // explodeBomb puede ser llamado por collider(bombs, platforms) o collider(bombs, player)
+    function explodeBomb(objA, objB) {
+        // Determinar cuál de los dos es la bomba y cuál es el otro objeto
+        var bomb = null;
+        var other = null;
+        if (objA && objA.texture && objA.texture.key === 'bomb') {
+            bomb = objA; other = objB;
+        } else if (objB && objB.texture && objB.texture.key === 'bomb') {
+            bomb = objB; other = objA;
+        } else {
+            return;
+        }
+
+        // Si ya explotó, no hacer nada
+        if (bomb.getData('exploded')) return;
+
+        // ¿Colisión con el jugador?
+        var collidesWithPlayer = (other && other.texture && other.texture.key === 'dude');
+
+        // ¿Colisión con la plataforma 'ground'?
+        var collidesWithGround = (other && other.texture && other.texture.key === 'ground');
+
+        // Comprobación física: asegurarnos que la bomba esté apoyada en el suelo
+        var onFloor = false;
+        if (bomb.body) {
+            onFloor = (bomb.body.blocked && bomb.body.blocked.down) ||
+                      (bomb.body.touching && bomb.body.touching.down);
+        }
+
+        // Explotar si:
+        // - colisiona con el jugador (siempre), o
+        // - colisiona con ground Y la física dice que está sobre el suelo
+        if (!collidesWithPlayer && !(collidesWithGround && onFloor)) {
+            return;
+        }
+
+        // Marcar como explotado para prevenir llamadas repetidas
+        bomb.setData('exploded', true);
+
+        // Guardar posición y desactivar la bomba (sin romper el juego)
+        const x = bomb.x;
+        const y = bomb.y;
+        bomb.disableBody(true, true);
+
+        // Crear sprite de explosión (no físico) y reproducir la animación
+        // Ajusta scale según cómo quieras ver la animación en tu juego
+        let explosion = this.add.sprite(x, y, 'explosion');
+        explosion.setOrigin(0.5, 0.5);
+        explosion.setScale(3);    // con frames 16x16, escala 3 se ve bien; ajústalo si deseas
+        explosion.setDepth(10);
+        explosion.play('explode_anim');
+
+        // Destruir al finalizar la animación
+        explosion.on('animationcomplete', function () {
+            explosion.destroy();
+        });
+    }
+
+</script>
+
+</body>
+</html>
