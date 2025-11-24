@@ -1,69 +1,55 @@
-<!doctype html> 
-<html lang="en"> 
-<head> 
+<!doctype html>
+<html lang="en">
+<head>
     <meta charset="UTF-8" />
-    <title>Making your first Phaser 3 Game - Part 9</title>
+    <title>ZAPATA</title>
     <script src="//cdn.jsdelivr.net/npm/phaser@3.11.0/dist/phaser.js"></script>
-    <style type="text/css">
-        body {
-            margin: 0;
-        }
+    <style>
+        body { margin: 0; }
     </style>
 </head>
 <body>
 
-<script type="text/javascript">
-
+<script>
     var config = {
         type: Phaser.AUTO,
         width: 800,
         height: 600,
         physics: {
             default: 'arcade',
-            arcade: {
-                gravity: { y: 300 },
-                debug: false
-            }
+            arcade: { gravity: { y: 300 }, debug: false }
         },
-        scene: {
-            preload: preload,
-            create: create,
-            update: update
-        }
+        scene: { preload, create, update }
     };
 
-    var player;
-    var stars;
-    var platforms;
-    var cursors;
-    var score = 0;
-    var scoreText;
-
+    var player, stars, bombs, platforms, cursors;
+    var score = 0, scoreText, highScoreText;
     var game = new Phaser.Game(config);
 
-    function preload ()
-    {
+    function preload () {
         this.load.image('sky', 'assets/sky.png');
         this.load.image('ground', 'assets/platform.png');
         this.load.image('star', 'assets/star.png');
-        this.load.image('bomb', 'assets/bomb.png');
         this.load.spritesheet('dude', 'assets/dude.png', { frameWidth: 32, frameHeight: 48 });
+        this.load.image('bomb', 'assets/bomb.png');
+        this.load.spritesheet('explosion', 'assets/explosion.png', {
+            frameWidth: 48,
+            frameHeight: 32
+        });
     }
 
-    function create ()
-    {
+    function create () {
+        score = 0;
+
         this.add.image(400, 300, 'sky');
 
         platforms = this.physics.add.staticGroup();
-
         platforms.create(400, 568, 'ground').setScale(2).refreshBody();
-
         platforms.create(600, 400, 'ground');
         platforms.create(50, 250, 'ground');
         platforms.create(750, 220, 'ground');
 
         player = this.physics.add.sprite(100, 450, 'dude');
-
         player.setBounce(0.2);
         player.setCollideWorldBounds(true);
 
@@ -96,54 +82,90 @@
         });
 
         stars.children.iterate(function (child) {
-
             child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
-
         });
 
-        scoreText = this.add.text(16, 16, 'score: 0', { fontSize: '32px', fill: '#000' });
+        scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '32px', fill: '#000' });
+
+        
+        const savedHighScore = localStorage.getItem('highScore') || 0;
+        highScoreText = this.add.text(480, 16, 'High Score: ' + savedHighScore, {
+            fontSize: '32px',
+            fill: '#000'
+        });
 
         this.physics.add.collider(player, platforms);
         this.physics.add.collider(stars, platforms);
-
         this.physics.add.overlap(player, stars, collectStar, null, this);
+
+        
+        this.anims.create({
+            key: 'explode',
+            frames: this.anims.generateFrameNumbers('explosion', { start: 0, end: 5 }),
+            frameRate: 10,
+            repeat: 0
+        });
+
+        
+        bombs = this.physics.add.group();
+        bombs.create(100, 100, 'bomb');
+        bombs.create(300, 200, 'bomb');
+        bombs.create(500, 150, 'bomb');
+        bombs.create(200, 300, 'bomb');
+        bombs.create(600, 250, 'bomb');
+
+        bombs.children.iterate(function (bomb) {
+            bomb.setBounce(1);
+            bomb.setCollideWorldBounds(true);
+            bomb.setVelocity(Phaser.Math.Between(-200, 200), 20);
+        });
+
+        this.physics.add.collider(bombs, platforms);
+        this.physics.add.collider(player, bombs, hitBomb, null, this);
     }
 
-    function update ()
-    {
-        if (cursors.left.isDown)
-        {
+    function update () {
+        if (cursors.left.isDown) {
             player.setVelocityX(-160);
-
             player.anims.play('left', true);
-        }
-        else if (cursors.right.isDown)
-        {
+        } else if (cursors.right.isDown) {
             player.setVelocityX(160);
-
             player.anims.play('right', true);
-        }
-        else
-        {
+        } else {
             player.setVelocityX(0);
-
             player.anims.play('turn');
         }
 
-        if (cursors.up.isDown && player.body.touching.down)
-        {
+        if (cursors.up.isDown && player.body.touching.down) {
             player.setVelocityY(-330);
         }
     }
 
-    function collectStar (player, star)
-    {
+    function collectStar (player, star) {
         star.disableBody(true, true);
-
         score += 10;
         scoreText.setText('Score: ' + score);
     }
 
+    function hitBomb (player, bomb) {
+        bomb.disableBody(true, true);
+
+        const explosion = this.add.sprite(bomb.x, bomb.y, 'explosion');
+        explosion.play('explode');
+
+        explosion.on('animationcomplete', () => {
+            explosion.destroy();
+
+            
+            const currentHighScore = localStorage.getItem('highScore') || 0;
+            if (score > currentHighScore) {
+                localStorage.setItem('highScore', score);
+            }
+
+            
+            this.scene.restart();
+        });
+    }
 </script>
 
 </body>
